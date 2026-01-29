@@ -1,35 +1,19 @@
 import streamlit as st
+from sys import exit
 import pandas as pd
-import os
+from stripr import strip_margin # Opcional, para limpiar textos largos
+from streamlit_gsheets import GSheetsConnection
 
-# Configuración de la aplicación
-st.set_page_config(page_title="Consulta Técnica de Repuestos", layout="wide")
+st.set_page_config(page_title="Autopartes Díaz", layout="wide")
 
-# Nombre del archivo Excel
-ARCHIVO_EXCEL = "inventario_repuestos.xlsx"
+# 1. Conexión con Google Sheets
+# Nota: La URL debe ser la que me pasaste
+url = "https://docs.google.com/spreadsheets/d/12HqsHiLVVdwtOrX_Qb0HozHWdpyIok6syoUYpbPYJ-Q/edit?usp=sharing"
 
-def inicializar_base_de_datos():
-    if not os.path.exists(ARCHIVO_EXCEL):
-        # Parámetros técnicos para cargar (sin precio)
-        columnas = [
-            "SKU", 
-            "Descripcion_Producto", 
-            "Codigos_OEM", 
-            "Otros_Proveedores_Marcas", 
-            "VIN_Prefijo", 
-            "Compatibilidad_Vehiculos", 
-            "Especificaciones_Tecnicas"
-        ]
-        df = pd.DataFrame(columns=columnas)
-        df.to_excel(ARCHIVO_EXCEL, index=False)
-        return True
-    return False
+conn = st.connection("gsheets", type=GSheetsConnection)
 
 def cargar_datos():
-    return pd.read_excel(ARCHIVO_EXCEL)
-
-# Crear archivo si no existe
-inicializar_base_de_datos()
+    return conn.read(spreadsheet=url)
 
 st.title("⚙️ Buscador Técnico - Autopartes Díaz")
 st.markdown("---")
@@ -40,7 +24,6 @@ if menu == "🔍 Buscador":
     busqueda = st.text_input("Ingrese VIN, OEM o Descripción:")
     if busqueda:
         df = cargar_datos()
-        # Búsqueda inteligente en todas las celdas del Excel
         resultados = df[df.apply(lambda r: r.astype(str).str.contains(busqueda, case=False).any(), axis=1)]
         
         if not resultados.empty:
@@ -60,7 +43,7 @@ if menu == "🔍 Buscador":
             st.warning("No se encontraron coincidencias.")
 
 elif menu == "➕ Registrar Datos":
-    st.subheader("Carga Manual de Información")
+    st.subheader("Carga de Información a Google Sheets")
     with st.form("registro"):
         c1, c2 = st.columns(2)
         with c1:
@@ -73,13 +56,17 @@ elif menu == "➕ Registrar Datos":
             comp = st.text_area("Compatibilidad (Modelos/Años/Motor)")
             specs = st.text_input("Dientes / Medidas / Notas")
         
-        if st.form_submit_button("Guardar en Excel"):
-            df = cargar_datos()
-            nuevo = {
+        if st.form_submit_button("Guardar en Google Sheets"):
+            # Leer datos actuales
+            df_actual = cargar_datos()
+            # Crear nueva fila
+            nuevo_dato = pd.DataFrame([{
                 "SKU": sku, "Descripcion_Producto": desc, "Codigos_OEM": oem, 
                 "Otros_Proveedores_Marcas": prov, "VIN_Prefijo": vin, 
                 "Compatibilidad_Vehiculos": comp, "Especificaciones_Tecnicas": specs
-            }
-            df = pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True)
-            df.to_excel(ARCHIVO_EXCEL, index=False)
-            st.success("Dato guardado localmente.")
+            }])
+            # Combinar y actualizar
+            df_final = pd.concat([df_actual, nuevo_dato], ignore_index=True)
+            conn.update(spreadsheet=url, data=df_final)
+            st.success("✅ ¡Dato guardado permanentemente en la nube!")
+            st.balloons()
